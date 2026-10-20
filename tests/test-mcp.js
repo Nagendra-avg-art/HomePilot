@@ -14,6 +14,7 @@ const transport = new StreamableHTTPClientTransport(
 try {
   // Connect using the MCP protocol.
   await client.connect(transport);
+  console.log("Negotiated MCP protocol version:", transport.protocolVersion);
   console.log("1. MCP connection successful!");
 
   // Ask the server which tools it provides.

@@ -3,6 +3,7 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { calculateEnergyPlan, validateHousehold } from "./planner.js";
 
 const app = express();
 app.use(express.json());
@@ -176,6 +177,79 @@ server.registerTool(
     };
   }
 );
+
+  server.registerTool(
+    "plan_energy_reduction",
+    {
+      title: "Plan Household Energy Reduction",
+      description:
+        "Generates a deterministic energy-reduction plan comparing baseline usage against a proposed scenario based on user constraints (target reduction percent, max kWh budget, protected devices, and electricity tariff).",
+      inputSchema: {
+        household: z
+          .record(z.string(), z.any())
+          .optional()
+          .describe("Optional user-configured household model containing custom appliances, rated watts, and hours"),
+        targetReductionPercent: z
+          .number()
+          .min(0)
+          .max(100)
+          .optional()
+          .describe("Target percentage reduction in household energy (0-100)"),
+        maxKwhBudget: z
+          .number()
+          .min(0)
+          .optional()
+          .describe("Target maximum household energy usage in kWh"),
+        protectedDevices: z
+          .array(z.string())
+          .optional()
+          .describe("List of device names that must not be reduced (e.g. ['refrigerator'])"),
+        tariffPerKwh: z
+          .number()
+          .min(0)
+          .optional()
+          .describe("Cost per kWh for estimating monetary bill savings (default: 0.15)"),
+        currency: z
+          .string()
+          .optional()
+          .describe("Currency symbol for bill calculations (default: '$')"),
+      },
+    },
+    async ({
+      household: customHousehold,
+      targetReductionPercent,
+      maxKwhBudget,
+      protectedDevices,
+      tariffPerKwh,
+      currency,
+    }) => {
+      let activeHousehold = household;
+      if (customHousehold && Array.isArray(customHousehold.devices)) {
+        const val = validateHousehold(customHousehold);
+        if (val.valid) {
+          activeHousehold = val.household;
+        }
+      }
+
+      const plan = calculateEnergyPlan({
+        household: activeHousehold,
+        targetReductionPercent,
+        maxKwhBudget,
+        protectedDevices,
+        tariffPerKwh,
+        currency,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(plan, null, 2),
+          },
+        ],
+      };
+    }
+  );
 
   return server;
 }
